@@ -1,0 +1,122 @@
+---
+title: "Practical Machine Learning Project"
+author: "raydante"
+date: "April 26, 2015"
+output: html_document
+---
+
+
+
+The goal of this project is to predict the quality of how the subjects performed  an exercise from readings from activity monitor readings.
+
+
+After downloading and reading the training data, it was clear that there were a lot of missing data encoded either by "NA", "#DIV/0!", or the empty string.  So I read the .csv to reflect that.
+
+```{r warning=FALSE, message=FALSE}
+
+library(caret)
+library(randomForest)
+
+pml.training <- read.csv("pml-training.csv",na.strings=c("NA","","#DIV/0!"))
+```
+
+Inspecting the data, many of predictors were mostly NA. So I selected those which had more than half non-NA values and selected their names. I used the names instead of the column numbers because the names might give a clue as to which predictors might be related.
+
+
+```{r}
+few_nas <- apply(!is.na(pml.training),2,mean) > .5
+predictors <- names(pml.training)[few_nas]
+```
+
+Looking at the names and values, I decided to drop the first 7 because they did not seem to be biometric measurements.  The 60th column was "classe", the value to be predicted.  predictor.names will be used later when making preditions on the 20 test samples.
+
+
+
+```{r}
+predictor.names <- predictors[8:59]
+```
+
+Keep just the predictor.names and classe columns, and then split into train and test sets.
+
+
+```{r}
+
+pml.data <- pml.training[,c(predictor.names , "classe")]
+set.seed(83049)
+InTrain<-createDataPartition(y=pml.data$classe,p=0.7,list=FALSE)
+train <-pml.data[InTrain,]
+validation <- pml.data[-InTrain,]
+
+```
+
+I decided to use Random Forests as my model and to use 10 fold cross validation to select the number of forests.
+
+
+
+```{r}
+folds <- createFolds(train$classe, k = 10, list = TRUE, returnTrain = TRUE)
+for( N in c(3,5,15,25,35,51,75,105)){
+    acc <- 0
+    for( i in 1:10){
+        model <- randomForest(classe~.,data=train[folds[[i]],],ntree=N)
+        p <- predict(model, newdata=train[-folds[[i]],])  
+        cm <- confusionMatrix(p, train[-folds[[i]],]$classe )
+        acc <- acc + cm$overall[1]
+    }
+    
+    cat("Avg accuracy for", N , "trees is ", acc/10, "\n")
+    
+}
+    
+
+```
+
+Seemed like 51 trees was about right.
+
+So trained a random forest on the training data
+
+
+```{r}
+
+model <- randomForest(classe~.,data=train,ntree=51)
+
+```
+Look at what plotting the model does...
+
+```{r echo=FALSE}
+plot(model)
+```
+
+To estimate the out of sample error, predict on the validation set and get the accuracy from the confusion matrix.
+
+
+```{r}
+
+p <- predict(model, newdata=validation[,-53])
+accuracy <- confusionMatrix(p, validation$classe)$overall[1]
+
+```
+
+The accuracy on validation, which is my out of sample error prediction,  is `r accuracy`.
+
+
+To predict the 20 values for the second part of the assignment, load the 20 test samples, select the same predictor names, and use the model to predict the classe.
+
+
+
+```{r}
+
+pml.testing <- read.csv("pml-testing.csv",na.strings=c("NA","","#DIV/0!"))
+pml.data <- pml.testing[,c(predictor.names )]
+pred <- predict(model, newdata=pml.data)
+answers = rep("", 20)
+decoder <- c("A", "B", "C", "D", "E")
+
+for (i in 1:20){
+    answers[i] <- decoder[pred[i]]
+}
+
+```
+
+The preditions are:
+`r answers`
